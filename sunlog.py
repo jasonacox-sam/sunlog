@@ -80,12 +80,12 @@ def parse(row):
             return 0.0
 
     return {
-        "grid_w":       f("Grid (W)"),
-        "home_w":       f("Home (W)"),
-        "solar_w":      f("Solar (W)"),
-        "battery_w":    f("Battery (W)"),   # positive = charging, negative = discharging
-        "battery_pct":  f("Percentage"),
-        "grid_status":  row.get("Grid Status", "").strip(),
+        "grid_w":       f("Grid"),
+        "home_w":       f("Home"),
+        "solar_w":      f("Solar"),
+        "battery_w":    f("Battery"),   # positive = charging, negative = discharging
+        "battery_pct":  f("BatteryLevel"),
+        "grid_status":  row.get("GridStatus", "").strip(),
         "ts":           datetime.now(),
     }
 
