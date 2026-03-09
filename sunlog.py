@@ -109,6 +109,30 @@ class DayTracker:
         self.grid_events   = 0           # times grid_status changed to/from On
         self.summary_written = False
 
+    def load_from_csv(self):
+        """Reload today's readings from CSV on startup (survives process restarts)."""
+        path = os.path.join(self.cfg["log_dir"], f"{self.date}.csv")
+        if not os.path.exists(path):
+            return
+        try:
+            with open(path, newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    d = {
+                        "ts":          datetime.fromisoformat(row["timestamp"]),
+                        "solar_w":     float(row["solar_w"]),
+                        "home_w":      float(row["home_w"]),
+                        "battery_w":   float(row["battery_w"]),
+                        "battery_pct": float(row["battery_pct"]),
+                        "grid_w":      float(row["grid_w"]),
+                        "grid_status": row.get("grid_status", ""),
+                    }
+                    self.ingest(d)
+            self._rows_saved = len(self.readings)
+            log.info("♻️  Reloaded %d readings from %s", len(self.readings), path)
+        except Exception as e:
+            log.warning("Could not reload CSV: %s", e)
+
     def ingest(self, d):
         """Feed one parsed reading into the tracker."""
         self.readings.append(d)
@@ -221,21 +245,30 @@ class DayTracker:
         return "\n".join(lines)
 
     def save_raw_csv(self):
-        """Append today's readings to a daily CSV file."""
+        """Append only new (unsaved) readings to today's CSV file."""
         path = os.path.join(self.cfg["log_dir"], f"{self.date}.csv")
         write_header = not os.path.exists(path)
+
+        # Track how many rows are already on disk (set during load_from_csv or prior saves)
+        rows_on_disk = getattr(self, "_rows_saved", 0)
+        new_readings = self.readings[rows_on_disk:]
+        if not new_readings:
+            return
+
         with open(path, "a", newline="") as f:
             writer = csv.writer(f)
             if write_header:
                 writer.writerow(["timestamp", "solar_w", "home_w",
                                  "battery_w", "battery_pct", "grid_w", "grid_status"])
-            for r in self.readings:
+            for r in new_readings:
                 writer.writerow([
                     r["ts"].isoformat(timespec="seconds"),
                     round(r["solar_w"], 1), round(r["home_w"], 1),
                     round(r["battery_w"], 1), round(r["battery_pct"], 1),
                     round(r["grid_w"], 1), r["grid_status"],
                 ])
+        self._rows_saved = len(self.readings)
+        log.debug("💾 Saved %d new rows to CSV", len(new_readings))
 
     def save_narrative(self):
         """Write the narrative summary to a .txt file."""
@@ -265,6 +298,9 @@ def main():
     log.info("🌅 sunlog starting — polling %s", cfg["powerwall_url"])
     log.info("   Day poll: %ds | Night poll: %ds | Log dir: %s",
              cfg["poll_interval_day"], cfg["poll_interval_night"], cfg["log_dir"])
+
+    # Reload today's data from CSV if we're restarting mid-day
+    tracker.load_from_csv()
 
     summary_hour    = cfg["summary_hour"]
     last_summary_d  = None
